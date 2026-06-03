@@ -1,0 +1,44 @@
+import os
+import httpx
+
+class TelegramSender:
+    def __init__(self):
+        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        
+        if not self.bot_token or not self.chat_id:
+            raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env")
+            
+        self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+    async def send_review_message(self, node_title: str, node_label: str, node_content: str, related_code: str = "") -> bool:
+        """
+        將抽取出來的知識節點，格式化後傳送到 Telegram
+        """
+        # 使用 HTML 格式，因為 Telegram 的 MarkdownV2 對特殊符號的跳脫有非常嚴格的限制
+        # 而我們處理的是程式碼，用 HTML 標籤 <b>, <code>, <pre> 比較不容易壞掉
+        
+        message = f"📚 <b>【間隔重複複習】</b>\n\n"
+        message += f"🏷 <b>類型：</b> {node_label}\n"
+        message += f"📌 <b>標題：</b> {node_title}\n\n"
+        
+        # 處理內容，簡易跳脫 HTML 特殊字元 (如 <, >, &)
+        safe_content = node_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        message += f"📖 <b>內容：</b>\n{safe_content}\n"
+        
+        if related_code:
+            safe_code = related_code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            message += f"\n💻 <b>程式碼範例：</b>\n<pre><code class='language-python'>\n{safe_code}\n</code></pre>"
+            
+        payload = {
+            "chat_id": self.chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.api_url, json=payload)
+            if response.status_code != 200:
+                print(f"Telegram 傳送失敗: {response.text}")
+                return False
+            return True
