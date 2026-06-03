@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+supabase
+google-genai
+pydantic
+networkx
+httpx
+beautifulsoup4
