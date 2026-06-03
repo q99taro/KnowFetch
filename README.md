@@ -31,17 +31,17 @@ pinned: false
 
 ```mermaid
 graph TD
-    subgraph Data Ingestion
+    subgraph Data_Ingestion [Data Ingestion]
         A[RSS Feeds] -->|httpx.AsyncClient| B(Supabase Node Deduplication)
         B -->|Unique URLs| C{Gemini Batch Filter}
         C -->|Keep: True| D[Web HTML Extraction]
     end
-    subgraph Data Processing
+    subgraph Data_Processing [Data Processing]
         D -->|Raw Document| E(Adaptive Chunker)
         E -->|Regex Protected Blocks| F{Gemini Structured Output}
         F -->|JSON Graph Nodes & Edges| G[(Supabase Postgres)]
     end
-    subgraph Spaced Repetition (FSRS)
+    subgraph Spaced_Repetition [Spaced Repetition FSRS]
         G -->|Daily Check due_date| H(FSRS Engine)
         H -->|Context: Fetch Linked Code| I[Telegram API]
         I -->|Push Alert| J((User))
