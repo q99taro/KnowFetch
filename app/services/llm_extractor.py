@@ -66,18 +66,32 @@ class LLMExtractor:
             return []
 
         prompt = """
-你是專業的 AI 技術編輯。請根據以下文章的「標題 (Title)」與「摘要 (Abstract)」過濾文章。
+你是專業的 AI 技術編輯，專門為「正在深化基礎並對接實戰應用的 AI 工程師」篩選具備學習與實用價值的技術文章。請根據以下文章的「標題 (Title)」與「摘要 (Abstract)」進行嚴格過濾。
 
-【符合條件的文章必須包含以下領域之一】：
-1. AI (尤其是 LLM / NLP)
-2. Data Science (資料科學)
-3. Machine Learning / Deep Learning
-4. Python (尤其是和前面資料科學/AI相關的教學)
-5. 針對上述領域的 Career Advice (職涯建議)
+【核心篩選原則】：
+保留具備「實務工程落地價值、程式碼實作、基礎至進階工具教學、或生產環境經驗」的文章。允許特定工具（如 Docker, PyTorch）的基礎教學，但拒絕毫無實質技術細節的科普概念定義。
 
-【絕對排除】：
-1. Computer Vision (CV) / Image Processing / Object Detection 等視覺相關
-2. 非技術文或不相干的廣告
+【符合條件（必須保留 keep: true）】：
+1. Docker 基礎與實務應用：包含 Docker 基礎概念、常用指令教學（如 docker run, docker build）、如何編寫基礎 Dockerfile 將 Python 應用或 FastAPI 服務容器化、多階段構建（Multi-stage builds）入門。
+2. PyTorch 基礎與深度學習實作：包含 PyTorch Tensors（張量）基礎操作、自動微分（Autograd）原理、如何使用 torch.nn 建立基礎神經網路、模型訓練流程（Training loop: backward, step）教學。
+3. AI 與資料科學實戰：進階 Python/Pandas 資料處理技巧、高併發資料流水線優化、LLM/NLP/RAG 架構調優與技術細節。
+4. 技術職涯與架構思維建議：中高階技術人員的經驗分享與職涯升級建議。
+
+【絕對排除（必須剔除 keep: false）】：
+1. 毫無技術細節的科普名詞定義：排除任何「僅介紹概念名稱」而無實作步驟的字典式文章。例如：只用三言兩語解釋「什麼是 RAG」、「什麼是大語言模型」、「什麼是 AI Agent」的科技新聞或科普簡介。
+2. 電腦視覺與視覺處理：Computer Vision (CV)、Image Processing、Object Detection 等視覺專門領域內容（除非該內容屬於 PyTorch 基礎訓練範例，如 MNIST 手寫辨識教學，則可保留）。
+3. 非技術文、蹭熱度的科技新聞、流於表面的通識或單純的產品推銷廣告。
+
+【範例對照】：
+- 保留範例 1（Docker 基礎）：
+  * 標題："How to Containerize Your First FastAPI Application with Docker"
+  * 摘要："A beginner-friendly guide covering Dockerfile basics, essential commands like docker build, and running your Python API inside a local container."
+- 保留範例 2（PyTorch 基礎）：
+  * 標題："Introduction to PyTorch Tensors and Neural Network Training"
+  * 摘要："Learn the absolute basics of PyTorch, including tensor operations, computing gradients with autograd, and writing your first training loop."
+- 剔除範例 1（無技術細節的名詞定義）：
+  * 標題："What is Retrieval-Augmented Generation (RAG)?"
+  * 摘要："An executive summary defining RAG and explaining why businesses are using it to connect LLMs with internal company data."
 
 請回傳一個 JSON，針對每篇文章給出是否保留 (keep: true/false) 與簡短原因。
 """
