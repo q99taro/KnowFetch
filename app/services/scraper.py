@@ -180,7 +180,9 @@ class ArticleScraper:
                                     "is_recent": False
                                 })
                 except Exception as e:
+                    import traceback
                     print(f"擷取 {source_name} 發生錯誤: {e}")
+                    print(traceback.format_exc())
                     
         return all_articles
 
