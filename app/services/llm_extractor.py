@@ -23,7 +23,7 @@ class BatchFilterResponse(BaseModel):
 class NodeLabel(str, Enum):
     Technology = "Technology"
     Library = "Library"
-    Concept = "Concept"
+    Best_Practice = "Best_Practice"
     Method = "Method"
     Syntax_Example = "Syntax_Example"
 
@@ -36,7 +36,7 @@ class KnowledgeNode(BaseModel):
     local_id: str = Field(description="局部唯一識別碼，例如 'node_1'")
     label: NodeLabel = Field(description="節點標籤")
     title: str = Field(description="快速理解這個節點的名詞標題(如 'Pandas', 'Adaptive Chunking')")
-    content: str = Field(description="定義與詳細內容。若是 Syntax_Example 必須保留完整 Markdown 程式碼。")
+    content: str = Field(description="定義、最佳實踐脈絡與詳細內容。若是 Syntax_Example 必須保留完整 Markdown 程式碼。")
 
 class KnowledgeEdge(BaseModel):
     source_local_id: str = Field(description="來源節點的 local_id")
@@ -127,40 +127,44 @@ class LLMExtractor:
         將「自適應分塊」後的文字段落送交 給 LLM，抽出符合 Schema 的 Nodes 與 Edges。
         """
         prompt = f"""
-你是一個資深的 AI 軟體架構師與技術實戰專家。你的任務是從下方的技術文本中，提煉出最核心、具備學習與實務複習價值的技術知識點，並建立結構化的知識圖譜。
+你是一個資深的 AI 軟體架構師與技術實戰專家。你的任務是從下方的技術文本中，提煉出對「資深 AI 工程師」具備高度實作價值與複習意義的技術節點，並建立結構化的知識圖譜。
 
-【高品質核心知識定義】：
-- 聚焦領域：進階大數據處理、AI/LLM/RAG 架構優化、PyTorch 模型訓練與張量操作、Docker 容器化基礎與實務運維、以及高密度 Data Science 代碼技巧。
-- 允許納入的基礎範疇（特定學習路徑）：
-  1. Docker 基礎指令、Dockerfile 編寫與鏡像打包實務。
-  2. PyTorch 基礎架構（如 Tensor 操作、Autograd 梯度計算、nn.Module、Training loop 實作）。
-- 嚴格排除 (絕對不要擷取)：
-  1. 毫無技術細節的通識概念定義（例如：只用三言兩語解釋什麼是 RAG、什麼是機器學習、什麼是大語言模型）。
-  2. 初階 Python 通用基礎語法（例如：csv 讀寫、json 解析、基礎 for-loop 與 if-else 判斷）。
-  3. 非資訊科學領域的業務背景知識。
+【目標讀者設定與知識門檻】：
+目標讀者是「具備兩年以上經驗的資深 AI 工程師與資料科學家」。
+在提取任何知識點前，請先進行自我審查：「這是一個資深 AI 工程師不知道的知識嗎？」如果該知識屬於初階常識，請絕對捨棄。
+
+【高品質核心知識定義 (The "Better Way" Rule)】：
+請優先尋找並提取文章中的「最佳實踐 (Best Practices)」、「效能優化寫法」、或「替代傳統寫法的進階方案」。
+當提取這類知識時，必須將「作者的解釋（為什麼這樣寫更好、更安全、更快？解決了什麼痛點？）」與「具體的程式碼」完整打包，保留充足的前後文脈絡，拒絕孤立無援的程式碼片段。
+
+【嚴格排除黑名單 (絕對不要擷取)】：
+  1. 純理論與底層抽象概念：絕對排除如 Pinned Memory, Bin Packing, CUDA 底層硬體調度、OS 記憶體分頁等「沒有伴隨具體高階 API 實作程式碼」的純理論解釋。
+  2. Python 內建標準庫與基礎 I/O 操作：絕對排除 os, sys, pathlib, csv, json, re, math 等任何 Python 內建標準庫的用法，以及關於本地端檔案讀寫 (open, read, write) 的基礎教學。
+  3. 初階 Python 通用基礎語法：絕對排除 for-loop、if-else、基本資料型態操作 (list/dict)。
+  4. 毫無技術細節的通識名詞定義。
 
 【本體論 (Ontology) 限制】：
-請嚴格遵守以下定義的節點與關係結構，單篇文章提取數量控制在 3 到 15 個節點，寧缺勿濫。
+請嚴格遵守以下定義的節點與關係結構，單篇文章提取數量控制在 3 到 10 個節點，寧缺勿濫。
 
 [節點標籤 Node Labels]:
-- Technology: 核心技術生態或工具（如: Python, Docker, PyTorch）。
-- Library: 進階或專用第三方函式庫（如: Pandas, Hugging Face Transformers, LlamaIndex）。
-- Concept: 深度核心概念、演算法或架構模式（如: Memory Optimization, Vector Indexing, Multi-stage Builds）。
-- Method: 具體的函數、API 接口、指令或實作技巧（如: pd.to_datetime, torch.backward, docker build）。
-- Syntax_Example: 具備實戰與複習價值的程式碼範例（必須保留原始程式碼，絕對不可翻譯或刪減縮排）。
+- Technology: 核心技術生態或工具（如: Docker, PyTorch, Kubernetes）。
+- Library: 進階或專用第三方函式庫（如: LlamaIndex, vLLM）。注意：嚴禁將 Python 內建庫標記為 Library。
+- Best_Practice: 實務最佳實踐或架構模式。專門用於記錄「更好的寫法」或「效能優化策略」，其內容必須包含痛點描述與解決方案。
+- Method: 具體的進階函數、API 接口或指令（如: torch.cuda.amp.autocast）。
+- Syntax_Example: 具備實戰與複習價值的程式碼範例。
 
 [關係類型 Relationships Edges]:
 - Library —[BELONGS_TO]→ Technology
-- Method —[IMPLEMENTS]→ Concept
-- Syntax_Example —[ILLUSTRATES]→ Method 或 Concept
+- Method —[IMPLEMENTS]→ Best_Practice
+- Syntax_Example —[ILLUSTRATES]→ Method 或 Best_Practice
 
 【翻譯與提取指令】：
-1. 全局掃視與限制：請全局掃視整段文本，**只提取 3 到 15 個最精華的核心知識節點**，寧缺勿濫。
-2. 節點的 `local_id` 欄位請使用英文技術專有名詞（如 `torch.autograd` 或 `docker_multi_stage`）。
-3. `title` 與 `content` 欄位必須使用**繁體中文**深入淺出地解釋其運作機制，並具體說明其「為什麼重要」或「解決了什麼實務工程痛點」。
-4. 程式碼隔離：如果是 `Syntax_Example` 標籤，其 `content` 必須完整保留原始 Markdown 程式碼區塊（如 ```python ... ```），絕對不可翻譯或刪減縮排。
-5. 如果是在其餘標籤的 `content` 中出現行內代碼，也請保留原始英文。
-6. 技術專有名詞若無通用的中文翻譯，可保留英文或在中文後括號備註英文。
+1. 全局掃視與限制：請全局掃視整段文本，**只提取 3 到 10 個最精華的核心知識節點**。若文章無符合標準的高階實戰內容，可回傳空陣列，寧缺勿濫。
+2. 脈絡保留：在填寫 `Best_Practice` 或 `Syntax_Example` 的 `content` / `properties` 時，必須包含完整的上下文，具體說明「為什麼推薦這種做法」。
+3. 節點的 `local_id` 欄位請使用英文技術專有名詞。
+4. `title` 與解釋性欄位必須使用**繁體中文**深入淺出地解釋。
+5. 程式碼隔離：如果是 `Syntax_Example` 標籤，必須完整保留原始 Markdown 程式碼區塊（如 ```python ... ```），絕對不可翻譯或刪減縮排。
+6. 如果是在其餘標籤的內容中出現行內代碼，也請保留原始英文。
 
 【文本內容】：
 {chunk_text}
