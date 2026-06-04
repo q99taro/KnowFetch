@@ -127,15 +127,27 @@ class LLMExtractor:
         將「自適應分塊」後的文字段落送交 給 LLM，抽出符合 Schema 的 Nodes 與 Edges。
         """
         prompt = f"""
-你是一個專業的 AI 技術翻譯與知識工程師。你的任務是從下方的技術文本中，抽取出知識圖譜 (Nodes 與 Edges) **並將其翻譯為繁體中文**。
+你是一個資深的 AI 軟體架構師與技術實戰專家。你的任務是從下方的技術文本中，提煉出最核心、具備學習與實務複習價值的技術知識點，並建立結構化的知識圖譜。
+
+【高品質核心知識定義】：
+- 聚焦領域：進階大數據處理、AI/LLM/RAG 架構優化、PyTorch 模型訓練與張量操作、Docker 容器化基礎與實務運維、以及高密度 Data Science 代碼技巧。
+- 允許納入的基礎範疇（特定學習路徑）：
+  1. Docker 基礎指令、Dockerfile 編寫與鏡像打包實務。
+  2. PyTorch 基礎架構（如 Tensor 操作、Autograd 梯度計算、nn.Module、Training loop 實作）。
+- 嚴格排除 (絕對不要擷取)：
+  1. 毫無技術細節的通識概念定義（例如：只用三言兩語解釋什麼是 RAG、什麼是機器學習、什麼是大語言模型）。
+  2. 初階 Python 通用基礎語法（例如：csv 讀寫、json 解析、基礎 for-loop 與 if-else 判斷）。
+  3. 非資訊科學領域的業務背景知識。
 
 【本體論 (Ontology) 限制】：
+請嚴格遵守以下定義的節點與關係結構，單篇文章提取數量控制在 3 到 15 個節點，寧缺勿濫。
+
 [節點標籤 Node Labels]:
-- Technology: 技術生態 (例如: Python, LLM)
-- Library: 函式庫 (例如: Pandas, PyTorch)
-- Concept: 核心概念 (例如: Adaptive Chunking, DataFrame)
-- Method: 具體方法或函數 (例如: read_csv(), chunk_article())
-- Syntax_Example: 程式碼範例 (必須保留原始程式碼，不可翻譯)
+- Technology: 核心技術生態或工具（如: Python, Docker, PyTorch）。
+- Library: 進階或專用第三方函式庫（如: Pandas, Hugging Face Transformers, LlamaIndex）。
+- Concept: 深度核心概念、演算法或架構模式（如: Memory Optimization, Vector Indexing, Multi-stage Builds）。
+- Method: 具體的函數、API 接口、指令或實作技巧（如: pd.to_datetime, torch.backward, docker build）。
+- Syntax_Example: 具備實戰與複習價值的程式碼範例（必須保留原始程式碼，絕對不可翻譯或刪減縮排）。
 
 [關係類型 Relationships Edges]:
 - Library —[BELONGS_TO]→ Technology
@@ -143,12 +155,12 @@ class LLMExtractor:
 - Syntax_Example —[ILLUSTRATES]→ Method 或 Concept
 
 【翻譯與提取指令】：
-1. 所有節點的 `title` 與 `content` 欄位必須使用**繁體中文**。
-2. **程式碼保留**：如果是 `Syntax_Example` 標籤，其 `content` 必須保留原始 Markdown 程式碼內容，絕對不要翻譯。
-3. 如果是在其餘標籤的 `content` 中出現行內代碼 (如 `pd.read_csv()`)，也請保留原始英文。
-4. 技術專有名詞若無通用的中文翻譯，可保留英文或在中文後括號備註英文。
-5. 請盡可能捕捉文本中的核心知識與程式碼範例，建立關係，確保知識可以被間隔重複引擎 (FSRS) 用來複習。
-6. 如果此段落沒有太多具體名詞，則盡量提取至少一個 Concept。
+1. 全局掃視與限制：請全局掃視整段文本，**只提取 3 到 15 個最精華的核心知識節點**，寧缺勿濫。
+2. 節點的 `local_id` 欄位請使用英文技術專有名詞（如 `torch.autograd` 或 `docker_multi_stage`）。
+3. `title` 與 `content` 欄位必須使用**繁體中文**深入淺出地解釋其運作機制，並具體說明其「為什麼重要」或「解決了什麼實務工程痛點」。
+4. 程式碼隔離：如果是 `Syntax_Example` 標籤，其 `content` 必須完整保留原始 Markdown 程式碼區塊（如 ```python ... ```），絕對不可翻譯或刪減縮排。
+5. 如果是在其餘標籤的 `content` 中出現行內代碼，也請保留原始英文。
+6. 技術專有名詞若無通用的中文翻譯，可保留英文或在中文後括號備註英文。
 
 【文本內容】：
 {chunk_text}

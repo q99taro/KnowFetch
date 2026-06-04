@@ -2,8 +2,10 @@ import re
 from typing import List
 
 class AdaptiveChunker:
-    def __init__(self, target_chunk_size: int = 1500):
+    def __init__(self, target_chunk_size: int = 60000):
         # 期望的區塊字數大小 (可視 Gemini 處理能力微調)
+        # 大幅增加 Chunk Size，利用 Gemini Flash-Lite 的大 Context Window
+        # 以整篇文為單位進行提取 (60000 字涵蓋絕大多數 Medium / TDS 萬字長文)
         self.target_chunk_size = target_chunk_size
 
     def chunk_article(self, text: str) -> List[str]:
