@@ -28,16 +28,11 @@ class TelegramSender:
             safe_code = related_code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             message += f"\n💻 <b>程式碼範例：</b>\n<pre><code class='language-python'>\n{safe_code}\n</code></pre>"
         
-        # 建立 Inline Keyboard 按鈕供 FSRS 收集使用者回饋
+        # 建立 Inline Keyboard 按鈕供使用者刪除已熟記的知識
         reply_markup = {
             "inline_keyboard": [
                 [
-                    {"text": "🔴 忘記", "callback_data": f"fsrs:1:{node_id}"},
-                    {"text": "🟠 困難", "callback_data": f"fsrs:2:{node_id}"}
-                ],
-                [
-                    {"text": "🟢 普通", "callback_data": f"fsrs:3:{node_id}"},
-                    {"text": "🔵 簡單", "callback_data": f"fsrs:4:{node_id}"}
+                    {"text": "🗑️ 已熟記 (刪除)", "callback_data": f"delete:{node_id}"}
                 ]
             ]
         }

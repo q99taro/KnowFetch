@@ -66,50 +66,37 @@ async def telegram_webhook(request: Request):
         except Exception as e:
             print(f"回應Callback失敗: {e}")
         
-        # 2. 處理資料庫更新
-        if callback_data.startswith("fsrs:"):
+        # 2. 處理資料庫更新 (刪除已熟記節點)
+        if callback_data.startswith("delete:"):
             parts = callback_data.split(":")
-            if len(parts) == 3:
-                _, rating_str, node_id = parts
-                rating = int(rating_str)
+            if len(parts) == 2:
+                _, node_id = parts
                 
                 db = get_db()
                 
-                res = db.table("nodes").select("*").eq("id", node_id).execute()
-                if res.data:
-                    node = res.data[0]
-                    curr_stability = node.get("stability", 0.0)
-                    curr_difficulty = node.get("difficulty", 0.0)
-                    
-                    new_params = FSRSLite.calculate_next_review(rating, curr_stability, curr_difficulty)
-                    
-                    db.table("nodes").update({
-                        "stability": new_params["stability"],
-                        "difficulty": new_params["difficulty"],
-                        "due_date": new_params["due_date"],
-                        "retrievability": 1.0 
-                    }).eq("id", node_id).execute()
-                    
-                    chat_id = callback_query["message"]["chat"]["id"]
-                    message_id = callback_query["message"]["message_id"]
-                    
-                    edit_url = f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup"
-                    answer_url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
-                    
-                    try:
-                        async with httpx.AsyncClient(timeout=10.0) as client:
-                            # 再次回應帶出 Toast 提示
-                            await client.post(answer_url, json={
-                                "callback_query_id": callback_query["id"],
-                                "text": f"✅ 已完成複習！下次複習日: {new_params['due_date'][:10]}"
-                            })
-                            # 隱藏或清空按鈕
-                            await client.post(edit_url, json={
-                                "chat_id": chat_id,
-                                "message_id": message_id,
-                                "reply_markup": {"inline_keyboard": []}
-                            })
-                    except Exception as e:
-                        print(f"後續按鈕隱藏與提示更新失敗: {e}")
+                # 從資料庫中刪除該筆節點
+                db.table("nodes").delete().eq("id", node_id).execute()
+                
+                chat_id = callback_query["message"]["chat"]["id"]
+                message_id = callback_query["message"]["message_id"]
+                
+                edit_url = f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup"
+                answer_url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
+                
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        # 再次回應帶出 Toast 提示
+                        await client.post(answer_url, json={
+                            "callback_query_id": callback_query["id"],
+                            "text": "✅ 已熟記！該筆紀錄已從資料庫刪除"
+                        })
+                        # 隱藏或清空按鈕
+                        await client.post(edit_url, json={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "reply_markup": {"inline_keyboard": []}
+                        })
+                except Exception as e:
+                    print(f"後續按鈕隱藏與提示更新失敗: {e}")
                         
     return {"status": "ok"}
