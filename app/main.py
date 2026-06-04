@@ -1,8 +1,8 @@
-from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Depends, Request
+﻿from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Depends, Request
 import os
 import httpx
 
-# 引入我們撰寫好的排程任務
+# 匯入應用模組
 from app.tasks.pipeline import KnowledgePipeline
 from app.tasks.daily_review import ReviewScheduler
 from app.core.database import get_db
@@ -10,7 +10,7 @@ from app.services.fsrs import FSRSLite
 
 app = FastAPI(
     title="KnowFetch",
-    description="自動化技術知識管理與間隔重複複習系統",
+    description="零成本自動化技術知識圖譜與間隔重複系統",
     version="1.0.0"
 )
 
@@ -22,13 +22,13 @@ def verify_cron_secret(x_cron_secret: str = Header(None)):
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "KnowFetch 伺服器運作中！"}
+    return {"status": "ok", "message": "KnowFetch 系統運作中！"}
 
 @app.post("/trigger-pipeline", status_code=202, dependencies=[Depends(verify_cron_secret)])
 async def trigger_pipeline(background_tasks: BackgroundTasks):
     """
-    透過 HTTP 呼叫觸發資料爬取與圖譜建立流水線。
-    使用 BackgroundTasks 以避免 HTTP Timeout，符合 Hugging Face 部署要求。
+    透過 HTTP 觸發每日收集與知識萃取管線。
+    使用 BackgroundTasks 以避免 HTTP Timeout，讓其能在背景執行。
     """
     pipeline = KnowledgePipeline()
     background_tasks.add_task(pipeline.run_daily_pipeline)
@@ -37,7 +37,7 @@ async def trigger_pipeline(background_tasks: BackgroundTasks):
 @app.post("/trigger-review", status_code=202, dependencies=[Depends(verify_cron_secret)])
 async def trigger_review(background_tasks: BackgroundTasks):
     """
-    透過 HTTP 呼叫觸發 Telegram 每日推播。
+    透過 HTTP 觸發 Telegram 每日推播複習。
     """
     scheduler = ReviewScheduler()
     background_tasks.add_task(scheduler.send_daily_review)
@@ -47,15 +47,26 @@ async def trigger_review(background_tasks: BackgroundTasks):
 async def telegram_webhook(request: Request):
     """
     接收 Telegram 的 Webhook 回傳資料 (Callback Query)
-    使用者點擊卡片底下的 FSRS 按鈕時，觸發更新演算法
     """
     data = await request.json()
     
     if "callback_query" in data:
         callback_query = data["callback_query"]
         callback_data = callback_query.get("data", "")
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         
-        # 解析按鈕回傳的資料格式： fsrs:<rating>:<node_id>
+        # 1. 立即回應 Telegram，消除「加載中」轉圈圈
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                answer_url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
+                await client.post(answer_url, json={
+                    "callback_query_id": callback_query["id"],
+                    "text": "收到回饋，處理中..."
+                })
+        except Exception as e:
+            print(f"回應Callback失敗: {e}")
+        
+        # 2. 處理資料庫更新
         if callback_data.startswith("fsrs:"):
             parts = callback_data.split(":")
             if len(parts) == 3:
@@ -64,44 +75,41 @@ async def telegram_webhook(request: Request):
                 
                 db = get_db()
                 
-                # 撈出該節點目前的紀錄
                 res = db.table("nodes").select("*").eq("id", node_id).execute()
                 if res.data:
                     node = res.data[0]
                     curr_stability = node.get("stability", 0.0)
                     curr_difficulty = node.get("difficulty", 0.0)
                     
-                    # 計算新的 FSRS 參數
                     new_params = FSRSLite.calculate_next_review(rating, curr_stability, curr_difficulty)
                     
-                    # 寫回資料庫
                     db.table("nodes").update({
                         "stability": new_params["stability"],
                         "difficulty": new_params["difficulty"],
                         "due_date": new_params["due_date"],
-                        "retrievability": 1.0 # 剛複習完記憶力復原至 100%
+                        "retrievability": 1.0 
                     }).eq("id", node_id).execute()
                     
-                    # 準備回覆 Telegram 讓按鈕的「載入中」畫面消失，並改為已完成文字
                     chat_id = callback_query["message"]["chat"]["id"]
                     message_id = callback_query["message"]["message_id"]
-                    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
                     
-                    answer_url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
                     edit_url = f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup"
+                    answer_url = f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery"
                     
-                    async with httpx.AsyncClient() as client:
-                        # 告訴 Telegram APP 已經收到回饋
-                        await client.post(answer_url, json={
-                            "callback_query_id": callback_query["id"],
-                            "text": f"✅ 已記錄！下次複習日：{new_params['due_date'][:10]}"
-                        })
-                        # 移除訊息底部的按鈕，防止重複點擊
-                        await client.post(edit_url, json={
-                            "chat_id": chat_id,
-                            "message_id": message_id,
-                            "reply_markup": {"inline_keyboard": []}
-                        })
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            # 再次回應帶出 Toast 提示
+                            await client.post(answer_url, json={
+                                "callback_query_id": callback_query["id"],
+                                "text": f"✅ 已完成複習！下次複習日: {new_params['due_date'][:10]}"
+                            })
+                            # 隱藏或清空按鈕
+                            await client.post(edit_url, json={
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "reply_markup": {"inline_keyboard": []}
+                            })
+                    except Exception as e:
+                        print(f"後續按鈕隱藏與提示更新失敗: {e}")
                         
     return {"status": "ok"}
-
