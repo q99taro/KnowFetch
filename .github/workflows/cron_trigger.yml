@@ -21,6 +21,7 @@ jobs:
           echo "Triggering Pipeline..."
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
                -H "Content-Type: application/json" \
+               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
 
   trigger_review:
@@ -34,4 +35,5 @@ jobs:
           echo "Triggering Review..."
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
                -H "Content-Type: application/json" \
+               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
