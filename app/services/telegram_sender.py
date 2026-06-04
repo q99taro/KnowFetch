@@ -1,5 +1,6 @@
 import os
 import httpx
+import asyncio
 
 class TelegramSender:
     def __init__(self):
@@ -44,25 +45,34 @@ class TelegramSender:
             "reply_markup": reply_markup
         }
         
-        # 設定較長的超時時間 (例如 30 秒)，並加上重試邏輯
-        timeout_settings = httpx.Timeout(45.0, connect=20.0, read=45.0)
-        transport_settings = httpx.AsyncHTTPTransport(retries=5)
+        # 設定較長的超時時間，並以手動迴圈方式進行重試，加入 Exponential Backoff
+        timeout_settings = httpx.Timeout(60.0, connect=30.0, read=60.0)
+        max_retries = 3
         
-        async with httpx.AsyncClient(timeout=timeout_settings, transport=transport_settings) as client:
-            try:
-                # 增加 User-Agent 避免有些防火牆或防護機制阻擋
-                headers = {"User-Agent": "Knowfetch-Bot/1.0"}
-                response = await client.post(self.api_url, json=payload, headers=headers)
-                if response.status_code != 200:
-                    print(f"Telegram API 傳送失敗 ({response.status_code}): {response.text}")
-                    return False
-                return True
-            except httpx.TimeoutException as e:
-                print(f"Telegram API 連線超時或讀取超時，請檢查網路。詳細錯誤: {type(e).__name__} - {e}")
-                return False
-            except httpx.RequestError as e:
-                print(f"Telegram API 請求錯誤: {e}")
-                return False
-            except Exception as e:
-                print(f"Telegram 發送時發生意外錯誤: {type(e).__name__} - {str(e)}")
-                return False
+        async with httpx.AsyncClient(timeout=timeout_settings) as client:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    # 增加 User-Agent 避免有些防火牆或防護機制阻擋
+                    headers = {"User-Agent": "Knowfetch-Bot/1.0"}
+                    response = await client.post(self.api_url, json=payload, headers=headers)
+                    if response.status_code != 200:
+                        print(f"Telegram API 傳送失敗 ({response.status_code}): {response.text}")
+                        # API 錯誤不需要重試，直接離開
+                        return False
+                    return True
+                except httpx.TimeoutException as e:
+                    print(f"[Attempt {attempt}/{max_retries}] Telegram API 連線/讀取超時: {type(e).__name__} - {e}")
+                except httpx.RequestError as e:
+                    print(f"[Attempt {attempt}/{max_retries}] Telegram API 請求錯誤: {type(e).__name__} - {e}")
+                except Exception as e:
+                    print(f"[Attempt {attempt}/{max_retries}] 發生意外錯誤: {type(e).__name__} - {str(e)}")
+                
+                # 如果還沒到最後一次，就等待後重試
+                if attempt < max_retries:
+                    wait_time = 3 ** attempt  # 3s, 9s, ... 
+                    print(f"--> 等待 {wait_time} 秒後重試...")
+                    await asyncio.sleep(wait_time)
+            
+            # 若全部次數都失敗
+            print("Telegram API 傳送失敗，已達最大重試次數。")
+            return False
