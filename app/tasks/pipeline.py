@@ -44,8 +44,26 @@ class KnowledgePipeline:
             print(f"-> 資料庫查詢失敗 ({e})，為安全起見，假設全部未抓取過。")
             existing_urls = set()
 
-        new_articles = [art for art in raw_articles if art['url'] not in existing_urls]
-        print(f"-> 去重後，剩下 {len(new_articles)} 篇新文章準備過濾。")
+        dedup_articles = [art for art in raw_articles if art['url'] not in existing_urls]
+        
+        # 處理各來源舊內容回退邏輯 (若當天無新內容，挑一篇尚未抓取過的舊內容)
+        new_articles = []
+        for source in set(art['source'] for art in dedup_articles):
+            source_arts = [art for art in dedup_articles if art['source'] == source]
+            
+            recent_arts = [art for art in source_arts if art.get('is_recent', True)]
+            if recent_arts:
+                # 如果有 24 小時內的新內容，把新內容全部加入
+                new_articles.extend(recent_arts)
+            else:
+                # 如果沒有新內容，從尚未抓取的舊內容中挑選最近的一篇
+                older_arts = [art for art in source_arts if not art.get('is_recent', True)]
+                if older_arts:
+                    older_arts.sort(key=lambda x: x['pub_date'], reverse=True)
+                    new_articles.append(older_arts[0])
+                    print(f"-> [{source}] 今日無新內容，補抓一篇未處理過的舊內容: {older_arts[0]['title']}")
+
+        print(f"-> 去重與篩選後，剩下 {len(new_articles)} 篇新文章準備過濾。")
 
         if not new_articles:
             print("-> 所有文章皆已處理過，流水線結束。")

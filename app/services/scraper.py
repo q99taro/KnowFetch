@@ -13,7 +13,8 @@ class ArticleScraper:
     FEEDS = {
         "kdnuggets": "https://www.kdnuggets.com/feed",
         "towardsdatascience": "https://towardsdatascience.com/feed/",
-        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ"
+        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ",
+        "youtube_vivian": "https://www.youtube.com/feeds/videos.xml?channel_id=UCyB2RBqKbxDPGCs1PokeUiA"
     }
 
     async def fetch_latest_articles(self) -> List[Dict[str, str]]:
@@ -62,7 +63,17 @@ class ArticleScraper:
                                     "title": title,
                                     "url": link,
                                     "abstract": abstract.strip(),
-                                    "pub_date": pub_date.isoformat()
+                                    "pub_date": pub_date.isoformat(),
+                                    "is_recent": True
+                                })
+                            else:
+                                all_articles.append({
+                                    "source": source_name,
+                                    "title": title,
+                                    "url": link,
+                                    "abstract": abstract.strip(),
+                                    "pub_date": pub_date.isoformat(),
+                                    "is_recent": False
                                 })
                     else:
                         for item in root.findall('.//item'):
@@ -93,7 +104,17 @@ class ArticleScraper:
                                 "title": title,
                                 "url": link,
                                 "abstract": abstract,
-                                "pub_date": pub_date.isoformat()
+                                "pub_date": pub_date.isoformat(),
+                                "is_recent": True
+                            })
+                        else:
+                            all_articles.append({
+                                "source": source_name,
+                                "title": title,
+                                "url": link,
+                                "abstract": abstract,
+                                "pub_date": pub_date.isoformat(),
+                                "is_recent": False
                             })
                 except Exception as e:
                     print(f"擷取 {source_name} 發生錯誤: {e}")
