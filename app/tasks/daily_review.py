@@ -41,6 +41,13 @@ class ReviewScheduler:
                 print("-> 目前資料庫中沒有知識節點可以複習。")
                 return
                 
+            # [重要防禦] Race Condition (併發競爭) 處理：
+            # 若有兩支程式同時觸發，它們會抓到一樣的節點並發送兩次。
+            # 因此我們先「提早推遲」這些被選中節點的 due_date，如同上鎖一般，後續的程式就不會抓到它們。
+            node_ids = [n['id'] for n in nodes_to_review]
+            postpone_time = (now_utc + timedelta(hours=12)).isoformat()
+            self.db.table("nodes").update({"due_date": postpone_time}).in_("id", node_ids).execute()
+                
             for node in nodes_to_review:
                 node_id = node['id']
                 print(f"-> 挑選到複習節點：{node['title']} ({node['label']})")
@@ -67,10 +74,7 @@ class ReviewScheduler:
                 
                 if success:
                     print(f"-> 🎉 成功推送複習訊息：{node['title']}")
-                    # [方案 A: Soft Postpone] 發送成功後，將 due_date 往後推遲 12 小時
-                    # 避免在同一天內且未點擊回饋按鈕時，重複收到同樣的推播
-                    postpone_time = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
-                    self.db.table("nodes").update({"due_date": postpone_time}).eq("id", node_id).execute()
+                    # (due_date 已在前面提早推遲，故此處不需再 update)
                     
                 # 推送每一則訊息中間稍作停頓以免被 Telegram API 阻擋
                 await asyncio.sleep(2)
