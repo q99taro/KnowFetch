@@ -6,10 +6,14 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 import re
 
+from urllib.parse import urlparse, parse_qs
+from youtube_transcript_api import YouTubeTranscriptApi
+
 class ArticleScraper:
     FEEDS = {
         "kdnuggets": "https://www.kdnuggets.com/feed",
-        "towardsdatascience": "https://towardsdatascience.com/feed/"
+        "towardsdatascience": "https://towardsdatascience.com/feed/",
+        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ"
     }
 
     async def fetch_latest_articles(self) -> List[Dict[str, str]]:
@@ -28,12 +32,45 @@ class ArticleScraper:
                     response.raise_for_status()
                     
                     root = ET.fromstring(response.text)
-                    for item in root.findall('.//item'):
-                        title = item.find('title').text
-                        link = item.find('link').text
-                        
-                        # 解析摘要 (過濾掉 HTML 標籤)
-                        description_node = item.find('description')
+                    
+                    # 判斷是否為 Atom feed (例如 YouTube)
+                    if root.tag.endswith('feed'):
+                        ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+                        for entry in root.findall('.//atom:entry', ns):
+                            title = entry.find('atom:title', ns).text
+                            link = entry.find('atom:link', ns).get('href')
+                            
+                            # 解析摘要 (Media group 內的描述)
+                            media_ns = {'media': 'http://search.yahoo.com/mrss/'}
+                            media_group = entry.find('media:group', media_ns)
+                            abstract = ""
+                            if media_group is not None:
+                                desc = media_group.find('media:description', media_ns)
+                                if desc is not None and desc.text:
+                                    abstract = desc.text[:500]
+
+                            pub_date_str = entry.find('atom:published', ns).text
+                            try:
+                                pub_date = datetime.fromisoformat(pub_date_str)
+                            except ValueError as e:
+                                print(f"無法解析時間 {pub_date_str}: {e}")
+                                pub_date = now_utc
+
+                            if pub_date >= one_day_ago:
+                                all_articles.append({
+                                    "source": source_name,
+                                    "title": title,
+                                    "url": link,
+                                    "abstract": abstract.strip(),
+                                    "pub_date": pub_date.isoformat()
+                                })
+                    else:
+                        for item in root.findall('.//item'):
+                            title = item.find('title').text
+                            link = item.find('link').text
+                            
+                            # 解析摘要 (過濾掉 HTML 標籤)
+                            description_node = item.find('description')
                         abstract = ""
                         if description_node is not None and description_node.text:
                             soup = BeautifulSoup(description_node.text, 'html.parser')
@@ -68,6 +105,31 @@ class ArticleScraper:
         依據網址來源抓取文章，並遵守該網站的禮貌限制 (例如 TDS 停留 10 秒)。
         將 HTML 轉為純文字，保留 Markdown 程式碼區塊以便分塊。
         """
+        if source.startswith("youtube"):
+            print(f"正在抓取 YouTube 字幕: {url}")
+            # parse video ID
+            parsed_url = urlparse(url)
+            video_id = ""
+            if parsed_url.hostname in ('youtu.be', 'www.youtu.be'):
+                video_id = parsed_url.path[1:]
+            elif parsed_url.hostname in ('youtube.com', 'www.youtube.com'):
+                if parsed_url.path == '/watch':
+                    qs = parse_qs(parsed_url.query)
+                    video_id = qs.get('v', [''])[0]
+                    
+            if not video_id:
+                print(f"無法解析 YouTube Video ID: {url}")
+                return ""
+            
+            try:
+                # 嘗試抓取繁中、簡中、或英文的字幕
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
+                full_text = " ".join([entry['text'] for entry in transcript])
+                return self._clean_text(full_text)
+            except Exception as e:
+                print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
+                return ""
+
         # --- 禮貌性延遲 ---
         if source == "towardsdatascience":
             print(f"進入 Towards Data Science 前，強制等待 10 秒: {url}")
