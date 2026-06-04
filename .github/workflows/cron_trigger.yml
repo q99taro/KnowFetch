@@ -3,14 +3,14 @@ name: KnowFetch Daily Schedule
 on:
   schedule:
     # 爬蟲與資料萃取：台灣時間 (UTC+8) 早上 7 點 = UTC 時間前一天的 23 點
-    - cron: '0 23 * * *'
+    - cron: "0 23 * * *"
     # 每日複習推播：
     # 平日 (週一至五): 08:00, 12:00, 17:00, 21:00 = UTC 0, 4, 9, 13
-    - cron: '0 0,4,9,13 * * 1-5'
+    - cron: "0 0,4,9,13 * * 1-5"
     # 假日 (週六、日): 09:00, 21:00 = UTC 1, 13
-    - cron: '0 1,13 * * 0,6'
+    - cron: "0 1,13 * * 0,6"
   # workflow_dispatch 允許我們在 GitHub 網頁上「手動按鈕」強制觸發測試
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   trigger_pipeline:
@@ -19,24 +19,46 @@ jobs:
     if: github.event.schedule == '0 23 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Send POST request to HF Space
+      - name: Wake up HF Space & Send POST request
         run: |
-          echo "Triggering Pipeline..."
+          echo "Waking up space and triggering pipeline..."
+          # 第一步：嘗試喚醒（允許第一次失敗）
+          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
+               -H "Content-Type: application/json" \
+               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" || true
+
+          # 等待 HF Space 啟動
+          sleep 20
+
+          # 第二步：正式觸發（加上 retry 與 timeout 確保成功）
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-pipeline" \
                -H "Content-Type: application/json" \
                -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
-               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
+               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+               --retry 3 --retry-delay 10 --max-time 60
 
   trigger_review:
     name: Trigger Review (Scheduled Times)
     # 確保這個 Job 在平日四次、假日兩次（或手動觸發時）執行
-    if: github.event.schedule == '0 0,4,9,13 * * 1-5' || github.event.schedule == '0 1,13 * * 0,6' || github.event_name == 'workflow_dispatch'
+    if: contains(github.event.schedule, '0,4,9,13') || contains(github.event.schedule, '1,13') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Send POST request to HF Space
+      - name: Wake up HF Space & Send POST request
         run: |
-          echo "Triggering Review..."
+          echo "Waking up space and triggering review..."
+          # 第一步：嘗試喚醒（允許第一次失敗）
+          curl -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
+               -H "Content-Type: application/json" \
+               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" || true
+
+          # 等待 HF Space 啟動
+          sleep 20
+
+          # 第二步：正式觸發（加上 retry 與 timeout 確保成功）
           curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
                -H "Content-Type: application/json" \
                -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
-               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
+               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+               --retry 3 --retry-delay 10 --max-time 60

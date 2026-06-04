@@ -1,6 +1,6 @@
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.services.telegram_sender import TelegramSender
 
@@ -67,6 +67,10 @@ class ReviewScheduler:
                 
                 if success:
                     print(f"-> 🎉 成功推送複習訊息：{node['title']}")
+                    # [方案 A: Soft Postpone] 發送成功後，將 due_date 往後推遲 12 小時
+                    # 避免在同一天內且未點擊回饋按鈕時，重複收到同樣的推播
+                    postpone_time = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
+                    self.db.table("nodes").update({"due_date": postpone_time}).eq("id", node_id).execute()
                     
                 # 推送每一則訊息中間稍作停頓以免被 Telegram API 阻擋
                 await asyncio.sleep(2)
