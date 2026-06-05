@@ -4,6 +4,12 @@ from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.services.telegram_sender import TelegramSender
 
+# 程序內的執行鎖：cron 可能在短時間內連續觸發 /trigger-review，
+# 在同一個 uvicorn 程序中造成多個 async 任務並發執行（log 會出現交錯的推播）。
+# 用一個非阻塞鎖確保同一時間只有一支複習任務在跑，重複的觸發直接略過。
+_review_lock = asyncio.Lock()
+
+
 class ReviewScheduler:
     def __init__(self):
         self.db = get_db()
@@ -13,7 +19,16 @@ class ReviewScheduler:
         """
         從資料庫挑選「今天應該要複習」的節點 (或測試階段隨機挑一個)，
         並封裝成訊息寄送到 Telegram。
+        若已有另一支複習任務正在執行，則直接略過本次觸發，避免重疊推播。
         """
+        if _review_lock.locked():
+            print("====== ⏭️ 已有複習推播正在執行中，略過本次重複觸發 ======")
+            return
+
+        async with _review_lock:
+            await self._run_daily_review()
+
+    async def _run_daily_review(self):
         print("====== 🧠 啟動每日知識複習推播 ======")
         
         # 1. 查詢需要複習的節點 (先查找 due_date <= 現在，或是 due_date 為空的節點來測試)

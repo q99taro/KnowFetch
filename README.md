@@ -61,6 +61,15 @@ graph TD
 
 ---
 
+### 🛡️ 系統穩定性優化 (Reliability Features)
+
+針對 Hugging Face Spaces 等特定雲端環境的限制，本系統實作了以下優化：
+- **全域 IPv4 強制連線**：解決 HF Spaces 上 IPv6 路由至 Telegram API 不通導致的隨機 `ConnectTimeout`。
+- **程序級非阻塞鎖 (Async Lock)**：防止外部 Cron 在短時間內重複觸發導致的並發任務執行與推播重疊。
+- **優化 Timeout 與 Backoff**：實作更精簡的連線超時與線性重試機制，確保系統在資源受限環境下仍能快速恢復，不阻塞後續排程。
+
+---
+
 ### 💻 快速啟動 (Quick Start)
 
 **1. 環境安裝**

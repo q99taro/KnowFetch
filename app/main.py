@@ -3,6 +3,10 @@ from contextlib import asynccontextmanager
 import os
 import httpx
 
+# 在任何網路連線發生前，先全域強制 IPv4，解決 HF Spaces 上 api.telegram.org 的隨機 ConnectTimeout
+from app.core.net import force_ipv4
+force_ipv4()
+
 # 匯入應用模組
 from app.tasks.pipeline import KnowledgePipeline
 from app.tasks.daily_review import ReviewScheduler
@@ -22,7 +26,7 @@ async def lifespan(app: FastAPI):
         
     if bot_token and webhook_url:
         print(f"====== 正在設定 Telegram Webhook: {webhook_url} ======")
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
             try:
                 res = await client.post(
                     f"https://api.telegram.org/bot{bot_token}/setWebhook",

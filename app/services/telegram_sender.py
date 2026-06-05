@@ -91,12 +91,16 @@ class TelegramSender:
             "reply_markup": reply_markup
         }
         
-        # 設定較長的超時時間，並以手動迴圈方式進行重試，加入 Exponential Backoff
-        timeout_settings = httpx.Timeout(60.0, connect=30.0, read=60.0)
+        # 設定 timeout：連線（含 TLS 握手）正常情況下應在數秒內完成，
+        # 故 connect timeout 設短一點，讓萬一卡住時能快速失敗、避免拖長整體執行時間
+        # 而造成外部 cron 逾時重試、產生重疊執行。
+        timeout_settings = httpx.Timeout(20.0, connect=10.0, read=20.0)
         max_retries = 3
         
         # 移除 local_address="0.0.0.0" 綁定，某些環境（例如特定 Docker 網路設定）
         # 強制綁定 0.0.0.0 進行 outbound 連線會導致封包丟失引發 ConnectTimeout。
+        # 真正造成 HF Spaces 隨機 ConnectTimeout 的原因是 IPv6 路由不通，
+        # 已於 app.core.net.force_ipv4() 在啟動時全域強制 IPv4 解決。
         
         async with httpx.AsyncClient(timeout=timeout_settings) as client:
             for attempt in range(1, max_retries + 1):
@@ -116,9 +120,9 @@ class TelegramSender:
                 except Exception as e:
                     print(f"[Attempt {attempt}/{max_retries}] 發生意外錯誤: {type(e).__name__} - {str(e)}")
                 
-                # 如果還沒到最後一次，就等待後重試
+                # 如果還沒到最後一次，就等待後重試（線性 backoff，避免等待過久）
                 if attempt < max_retries:
-                    wait_time = 3 ** attempt  # 3s, 9s, ... 
+                    wait_time = 2 * attempt  # 2s, 4s, ...
                     print(f"--> 等待 {wait_time} 秒後重試...")
                     await asyncio.sleep(wait_time)
             
