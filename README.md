@@ -15,13 +15,13 @@ pinned: false
 
 ---
 
-### � 系統畫面 (Screenshot)
+### 系統畫面 (Screenshot)
 
 <img width="295" height="639" alt="IMG_9599" src="https://github.com/user-attachments/assets/3719893b-91c8-417c-ad79-b0f3fac4569f" />
 
 ---
 
-### �📊 核心特色與技術流程 (Key Features & Workflow)
+### 📊 核心特色與技術流程 (Key Features & Workflow)
 
 1. **資料收集 (Data Ingestion)**
    - 定時巡邏指定的技術網站 RSS (如 KDnuggets, Towards Data Science) 與 YouTube 頻道 (透過 YouTube Data API v3 抓取影片清單與字幕)。
