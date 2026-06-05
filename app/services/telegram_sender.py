@@ -1,6 +1,7 @@
 import os
 import httpx
 import asyncio
+import re
 
 class TelegramSender:
     def __init__(self):
@@ -12,6 +13,50 @@ class TelegramSender:
             
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
+    def _format_markdown(self, text: str) -> str:
+        """
+        將 Markdown 格式轉為 Telegram HTML 格式
+        處理粗體、行內程式碼與多行程式碼塊，並確保標籤不會互相干擾。
+        """
+        if not text:
+            return ""
+            
+        # 1. 先處理特殊字元跳脫 (這是基礎)
+        # 注意：順序很重要，先換 & 再換 < >，避免之後插入的 HTML 標籤被跳脫
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        # 2. 暫存多行程式碼 ```python ... ``` -> 佔位符
+        code_blocks = []
+        def save_code_block(match):
+            code_content = match.group(1).strip("\n")
+            code_blocks.append(code_content)
+            return f"___BLOCK_CODE_{len(code_blocks)-1}___"
+        
+        text = re.sub(r"```(?:\w+)?\n?([\s\S]*?)```", save_code_block, text)
+        
+        # 3. 暫存行內程式碼 `code` -> 佔位符
+        inline_codes = []
+        def save_inline_code(match):
+            inline_content = match.group(1)
+            inline_codes.append(inline_content)
+            return f"___INLINE_CODE_{len(inline_codes)-1}___"
+            
+        text = re.sub(r"`([^`\n]+)`", save_inline_code, text)
+        
+        # 4. 處理粗體 **bold** -> <b>bold</b> (此時不會影響到程式碼內容)
+        text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+        
+        # 5. 還原多行程式碼塊 (並包裝 HTML 標籤)
+        for i, code in enumerate(code_blocks):
+            # Telegram HTML mode 在 <pre><code> 內不需要額外跳脫，因為我們第一步已經全域跳脫過了
+            text = text.replace(f"___BLOCK_CODE_{i}___", f"<pre><code>{code}</code></pre>")
+            
+        # 6. 還原行內程式碼
+        for i, code in enumerate(inline_codes):
+            text = text.replace(f"___INLINE_CODE_{i}___", f"<code>{code}</code>")
+            
+        return text
+
     async def send_review_message(self, node_id: str, node_title: str, node_label: str, node_content: str, related_code: str = "") -> bool:
         """
         將抽取出來的知識節點，格式化後傳送到 Telegram，並附上回饋按鈕
@@ -19,15 +64,16 @@ class TelegramSender:
         # 使用 HTML 格式，因為 Telegram 的 MarkdownV2 對特殊符號的跳脫有非常嚴格的限制
         # 而我們處理的是程式碼，用 HTML 標籤 <b>, <code>, <pre> 比較不容易壞掉
         
-        message = f"{node_title}\n\n"
+        message = f"<b>{node_title}</b>\n"
+        message += f"🔖 #{node_label}\n\n"
         
-        # 處理內容，簡易跳脫 HTML 特殊字元 (如 <, >, &)
-        safe_content = node_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        message += f"📖 <b>內容：</b>\n{safe_content}\n"
+        # 處理內容，將 Markdown 轉為 HTML
+        formatted_content = self._format_markdown(node_content)
+        message += f"📖 <b>內容：</b>\n{formatted_content}\n"
         
         if related_code:
-            safe_code = related_code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            message += f"\n💻 <b>程式碼範例：</b>\n<pre><code class='language-python'>\n{safe_code}\n</code></pre>"
+            formatted_code = self._format_markdown(related_code)
+            message += f"\n💻 <b>延伸範例：</b>\n{formatted_code}"
         
         # 建立 Inline Keyboard 按鈕供使用者刪除已熟記的知識
         reply_markup = {
