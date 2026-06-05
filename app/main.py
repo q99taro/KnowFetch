@@ -67,7 +67,7 @@ async def telegram_webhook(request: Request):
         except Exception as e:
             print(f"回應Callback失敗: {e}")
         
-        # 2. 處理資料庫更新 (刪除已熟記節點)
+        # 2. 處理資料庫更新 (刪除該來源所有相關紀錄並加入黑名單)
         if callback_data.startswith("delete:"):
             parts = callback_data.split(":")
             if len(parts) == 2:
@@ -75,8 +75,22 @@ async def telegram_webhook(request: Request):
                 
                 db = get_db()
                 
-                # 從資料庫中刪除該筆節點
-                db.table("nodes").delete().eq("id", node_id).execute()
+                # 先查詢該節點的 source_url
+                res = db.table("nodes").select("source_url").eq("id", node_id).execute()
+                if res.data and res.data[0].get("source_url"):
+                    source_url = res.data[0]["source_url"]
+                    
+                    # 將此 url 加入 ignored_urls 表，以防未來重複爬取
+                    try:
+                        db.table("ignored_urls").insert({"url": source_url}).execute()
+                    except Exception as e:
+                        print(f"寫入 ignored_urls 失敗 (可能已存在): {e}")
+
+                    # 從資料庫中刪除該 source_url 的所有節點
+                    db.table("nodes").delete().eq("source_url", source_url).execute()
+                else:
+                    # 如果找不到網址，就 fallback 刪除單筆 (確保例外安全)
+                    db.table("nodes").delete().eq("id", node_id).execute()
                 
                 chat_id = callback_query["message"]["chat"]["id"]
                 message_id = callback_query["message"]["message_id"]
@@ -89,7 +103,7 @@ async def telegram_webhook(request: Request):
                         # 再次回應帶出 Toast 提示
                         await client.post(answer_url, json={
                             "callback_query_id": callback_query["id"],
-                            "text": "✅ 已熟記！該筆紀錄已從資料庫刪除"
+                            "text": "✅ 已刪除！該來源所有內容已被清除並列入不爬取名單"
                         })
                         # 隱藏或清空按鈕
                         await client.post(edit_url, json={

@@ -75,11 +75,11 @@ class TelegramSender:
             formatted_code = self._format_markdown(related_code)
             message += f"\n💻 <b>延伸範例：</b>\n{formatted_code}"
         
-        # 建立 Inline Keyboard 按鈕供使用者刪除已熟記的知識
+        # 建立 Inline Keyboard 按鈕供使用者刪除該來源的相關知識
         reply_markup = {
             "inline_keyboard": [
                 [
-                    {"text": "🗑️ 已熟記 (刪除)", "callback_data": f"delete:{node_id}"}
+                    {"text": "🗑️ 略過/刪除整篇文章", "callback_data": f"delete:{node_id}"}
                 ]
             ]
         }

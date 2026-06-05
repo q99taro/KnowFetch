@@ -16,10 +16,10 @@ pinned: false
 ### 📊 系統每天的實際運作流程 (Daily Workflow)
 
 1. **RSS 自動巡邏與 YouTube API 整合**：每日定時巡邏知名技術網站 (如 **KDnuggets**、**Towards Data Science**) 的 RSS，並透過 YouTube Data API v3 精準抓取優質 YouTube 技術頻道 (如 [**Hung-yi Lee**](https://www.youtube.com/@HungyiLeeNTU)、[**陳縕儂Vivian NTU MiuLab**](https://www.youtube.com/c/VivianNTUMiuLab)) 的最新影片清單與字幕。
-2. **AI 精準篩選**：利用 LLM 依據個人喜好 (如: 只保留 AI/Python 相關文章) 即時過濾掉不感興趣的雜訊。
+2. **AI 精準篩選與管道分流**：對於技術網誌長文，系統會利用 LLM 依據個人喜好 (如: 只保留 AI/Python 相關文章) 即時過濾雜訊；而對於優質的 YouTube 頻道影片則設置為直接放行（Bypass LLM），確保每一部影片都能被百分之百收錄，同時節省 API Quota。
 3. **長文拆解與代碼保護**：針對優質長文，系統會自動下載全文，並使用 Python 特殊正則處理，確保切塊時「範例程式碼」的完整無缺，避免程式碼被從中截斷。
 4. **大局觀萃取與翻譯**：將極大片段 (最高 60,000 字元) 餵給 AI 進行全局掃視，摒棄初階語法，精準提煉「最佳實踐 (Best Practices)」，並將上下文翻譯成繁體中文（原本的程式碼原樣保留）。
-5. **動態推播與反饋**：每日根據 FSRS 排程，發送深刻的技術卡片至 Telegram。用戶可點擊卡片下方的「已熟記 (刪除)」互動按鈕，透過 FastAPI Webhook 即時更新資料庫，完成正向學習迴圈。
+5. **動態推播與黑名單反饋**：每日根據 FSRS 排程，發送深刻的技術卡片至 Telegram。用戶可點擊卡片下方的「🗑️ 略過/刪除整篇文章」互動按鈕，透過 FastAPI Webhook 即時刪除該篇文章的「所有」關聯內容，並將該網址自動加入 `ignored_urls` 黑名單，確保系統未來永不重複爬取。
 
 ---
 
@@ -34,9 +34,9 @@ pinned: false
 3. **Semaphore 併發限流防禦 (Strict Rate-Limiting)**  
    - **痛點**：免費 LLM API 擁有極嚴苛的 `15 RPM` 限制，易觸發 HTTP 429 被永久封鎖。
    - **解法**：系統底層實作了帶有 `asyncio.Semaphore` 與動態 `sleep` 冷卻佇列的非同步批次過濾器，實現平滑化的流量控制，杜絕請求中斷。
-4. **去中心化的本地全自動流水線 (Local Automation Pipeline)**  
-   - **痛點**：現代技術平台（尤其是 YouTube 與 Medium）對雲端伺服器 (如 AWS、Hugging Face) 進行了最高級別的 IP 防爬蟲封鎖，導致雲端部署屢遭失敗。
-   - **解法**：捨棄傳統的雲端部署，整套管線設計為在本地設備（個人電腦或樹莓派等家用住宅 IP 環境）上運行。透過操作系統內建的排程器（Mac `crontab` 或 Windows 工作排程器）每日定時執行腳本，不但完美避開反爬蟲驗證，還真正達到「零伺服器維護成本」。
+4. **防禦 Scale-to-Zero 的 Serverless 架構設計 (Hugging Face Spaces)**  
+   - **痛點**：部署於 Hugging Face Spaces 等免費雲端平台，在發送 HTTP 響應後會立即凍結 CPU 節省資源 (Scale-to-Zero)，導致傳統的 `BackgroundTasks` 行為中斷、排程跑到一半卡死。
+   - **解法**：取消背景任務分離，直接由 FastAPI Endpoint 以 `await` 壓住 HTTP 連線，強迫機器保持甦醒狀態直至爬蟲管線與推播完畢。此外 Telegram 推播加入 IPv4 綁定與 Exponential Backoff 重試機制，成功馴服嚴苛的免費雲端環境。
 
 ---
 
@@ -79,21 +79,29 @@ SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 YOUTUBE_API_KEY=your_youtube_v3_api_key
+CRON_SECRET=your_cron_secret
+REVIEW_BATCH_SIZE=2
 ```
 
 ### 🏃 如何執行
 
-**1. 啟動 Webhook 伺服器 (接收 Telegram 點擊反饋)：**
+**1. 啟動 FastAPI 伺服器 (支援 Webhook 與 Cron 排程觸發)：**
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 7860 --reload
 ```
 
-**2. 本地自動化排程 (每日更新腳本)：**
-你可以透過 Unix `crontab` 每日定時執行以下兩支管線，達成全自動化擷取與複習：
+**2. 自動化排程 (外部 Cron Job)：**
+系統設計運行於 Hugging Face Spaces 等雲端，請使用 cron-job.org 或 GitHub Actions 等外部服務定時 POST 以下 API 端點（需夾帶 Security Header）來觸發執行：
 ```bash
-# 抓取最新文章、拆解並透過 AI 寫入資料庫
-python -m app.tasks.pipeline
+# ==========================================
+# 觸發管線：抓取最新文章、拆解並寫入知識庫
+# ==========================================
+curl -X POST "https://<你的-HF-Space-網址>/trigger-pipeline" \
+     -H "x-cron-secret: your_cron_secret"
 
-# 根據 FSRS 演算法，將到期的技術卡片推播至 Telegram
-python -m app.tasks.daily_review
+# ==========================================
+# 觸發推播：透過 Telegram 發送每日複習卡片
+# ==========================================
+curl -X POST "https://<你的-HF-Space-網址>/trigger-review" \
+     -H "x-cron-secret: your_cron_secret"
 ```

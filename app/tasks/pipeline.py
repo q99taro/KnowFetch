@@ -40,6 +40,10 @@ class KnowledgePipeline:
             # 查詢 supabase 裡的 nodes 表，看 source_url 是否已經存在
             response = self.db.table("nodes").select("source_url").in_("source_url", urls).execute()
             existing_urls = {row['source_url'] for row in response.data}
+            
+            # 同時查詢 ignored_urls 表看是否已被使用者刪除的黑名單
+            ignored_res = self.db.table("ignored_urls").select("url").in_("url", urls).execute()
+            existing_urls.update(row['url'] for row in ignored_res.data)
         except Exception as e:
             print(f"-> 資料庫查詢失敗 ({e})，為安全起見，假設全部未抓取過。")
             existing_urls = set()
@@ -72,12 +76,25 @@ class KnowledgePipeline:
         # ---------------------------------------------------------
         # 步驟 3：LLM 批次判斷與篩選 (Batch Filtering)
         # ---------------------------------------------------------
-        print("[Step 3] 呼叫 Gemini 進行文章價值評估...")
-        filtered_articles = self.llm_extractor.batch_filter_articles(new_articles)
-        print(f"-> Gemini 篩選完畢，共 {len(filtered_articles)} 篇文章符合標準。")
+        print("[Step 3] 進行文章價值評估 (YouTube 影片直接保留，其餘交由 Gemini 篩選)...")
+        
+        yt_articles = [art for art in new_articles if art['source'].startswith('youtube_')]
+        other_articles = [art for art in new_articles if not art['source'].startswith('youtube_')]
+        
+        filtered_articles = []
+        if yt_articles:
+            print(f"-> 直接保留 {len(yt_articles)} 篇 YouTube 影片 (跳過 LLM 評估)。")
+            filtered_articles.extend(yt_articles)
+            
+        if other_articles:
+            print(f"-> 將 {len(other_articles)} 篇文章交由 Gemini 進行篩選...")
+            llm_filtered = self.llm_extractor.batch_filter_articles(other_articles)
+            filtered_articles.extend(llm_filtered)
+            
+            # 剛呼叫完 LLM，強制暫停等待速率冷卻
+            await asyncio.sleep(self.gemini_rate_limit_delay)
 
-        # 剛呼叫完 LLM，強制暫停等待速率冷卻
-        await asyncio.sleep(self.gemini_rate_limit_delay)
+        print(f"-> 篩選完畢，共 {len(filtered_articles)} 篇文章準備抓取與分析。")
 
         # ---------------------------------------------------------
         # 步驟 4 ~ 6：逐篇抓取、切塊、抽圖譜與寫入 DB
