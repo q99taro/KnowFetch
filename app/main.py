@@ -30,7 +30,9 @@ async def lifespan(app: FastAPI):
                 )
                 print("Webhook 註冊結果:", res.text)
             except Exception as e:
-                print(f"Webhook 註冊失敗: {e}")
+                print(f"Webhook 註冊失敗: {repr(e)}")
+                import traceback
+                traceback.print_exc()
                 
     yield
     # 伺服器關閉時的清理動作 (Optional)
