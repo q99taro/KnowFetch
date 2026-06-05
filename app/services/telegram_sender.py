@@ -95,10 +95,10 @@ class TelegramSender:
         timeout_settings = httpx.Timeout(60.0, connect=30.0, read=60.0)
         max_retries = 3
         
-        # 強制使用 IPv4 綁定，避免 Hugging Face Spaces 環境中 IPv6 路由黑洞導致的 ConnectTimeout
-        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+        # 移除 local_address="0.0.0.0" 綁定，某些環境（例如特定 Docker 網路設定）
+        # 強制綁定 0.0.0.0 進行 outbound 連線會導致封包丟失引發 ConnectTimeout。
         
-        async with httpx.AsyncClient(timeout=timeout_settings, transport=transport) as client:
+        async with httpx.AsyncClient(timeout=timeout_settings) as client:
             for attempt in range(1, max_retries + 1):
                 try:
                     # 增加 User-Agent 避免有些防火牆或防護機制阻擋
