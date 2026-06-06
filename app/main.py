@@ -26,17 +26,25 @@ async def lifespan(app: FastAPI):
         
     if bot_token and webhook_url:
         print(f"====== 正在設定 Telegram Webhook: {webhook_url} ======")
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
-            try:
-                res = await client.post(
-                    f"https://api.telegram.org/bot{bot_token}/setWebhook",
-                    json={"url": webhook_url}
-                )
-                print("Webhook 註冊結果:", res.text)
-            except Exception as e:
-                print(f"Webhook 註冊失敗: {repr(e)}")
-                import traceback
-                traceback.print_exc()
+        import asyncio
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
+            for attempt in range(1, 4):  # 最多重試 3 次
+                try:
+                    res = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/setWebhook",
+                        json={"url": webhook_url}
+                    )
+                    print("Webhook 註冊結果:", res.text)
+                    break
+                except httpx.ConnectTimeout as e:
+                    print(f"Webhook 註冊逾時 (第 {attempt}/3 次): {repr(e)}")
+                    if attempt < 3:
+                        await asyncio.sleep(5 * attempt)  # 5s, 10s
+                except Exception as e:
+                    print(f"Webhook 註冊失敗: {repr(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    break
                 
     yield
     # 伺服器關閉時的清理動作 (Optional)
