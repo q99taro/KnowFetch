@@ -99,6 +99,18 @@ class KnowledgePipeline:
         # ---------------------------------------------------------
         # 步驟 4 ~ 6：逐篇抓取、切塊、抽圖譜與寫入 DB
         # ---------------------------------------------------------
+        # 為了使爬蟲運行時間能延伸至早上 8 點，降低 YouTube 爬取頻率避免被阻擋
+        import random
+        # 目標是 2 小時 (7200秒) 內處理完所有 YouTube 影片
+        yt_articles_count = sum(1 for a in filtered_articles if a['source'].startswith('youtube'))
+        if yt_articles_count > 0:
+            target_time_seconds = 7200
+            delay_per_yt = target_time_seconds // yt_articles_count
+            # 限制延遲上下限 (例如最少 60 秒，最多 5 分鐘)
+            yt_base_delay = max(60, min(delay_per_yt, 300))
+        else:
+            yt_base_delay = 60
+
         for i, article in enumerate(filtered_articles):
             print(f"\n[{i+1}/{len(filtered_articles)}] 開始處理: {article['title']}")
             
@@ -126,6 +138,14 @@ class KnowledgePipeline:
                 
                 print(f"     -> 成功抽取出 {len(graph_data.nodes)} 個節點與 {len(graph_data.edges)} 條邊，準備寫入 Supabase...")
                 self.save_graph_to_db(graph_data, article['url'])
+
+            # 爬取下一篇文章前，判斷是否為 YouTube 影片，進行隨機延遲 (分散請求避免被 ban)
+            if i < len(filtered_articles) - 1 and article['source'].startswith('youtube'):
+                # 加上一點隨機抖動 +/- 20%
+                jitter = random.uniform(0.8, 1.2)
+                sleep_time = int(yt_base_delay * jitter)
+                print(f"-> 🍵 避免 YouTube 爬取過於頻繁，等待 {sleep_time} 秒後再處理下一篇...\n")
+                await asyncio.sleep(sleep_time)
 
         print("====== 🎉 今日流水線執行完畢 ======")
 

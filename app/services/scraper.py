@@ -183,9 +183,10 @@ class ArticleScraper:
                 print(f"無法解析 YouTube Video ID: {url}")
                 return ""
             
-            try:
-                # 嘗試抓取繁中、簡中、或英文的字幕
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
+                    # 嘗試抓取繁中、簡中、或英文的字幕
                     # 舊版 YouTubeTranscriptApi (例如 v0.x)
                     if hasattr(YouTubeTranscriptApi, 'get_transcript'):
                         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
@@ -204,15 +205,17 @@ class ArticleScraper:
                         transcript = YouTubeTranscriptApi().fetch(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
                         # FetchedTranscriptSNippet object has .text
                         full_text = " ".join([snippet.text for snippet in transcript])
-                except Exception as inner_e:
-                    raise inner_e
-
-                return self._clean_text(full_text)
-            except Exception as e:
-                import traceback
-                print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
-                print(traceback.format_exc())
-                return ""
+                    
+                    return self._clean_text(full_text)
+                except Exception as e:
+                    import traceback
+                    if attempt < max_retries - 1:
+                        print(f"嘗試抓取 YouTube 字幕失敗 {video_id} (第 {attempt+1} 次)，等待後重試: {e}")
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
+                        print(traceback.format_exc())
+                        return ""
 
         # --- 禮貌性延遲 ---
         if source == "towardsdatascience":
