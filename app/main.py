@@ -13,39 +13,48 @@ from app.tasks.daily_review import ReviewScheduler
 from app.core.database import get_db
 from app.services.fsrs import FSRSLite
 
+async def _register_webhook_bg(bot_token: str, webhook_url: str) -> None:
+    """在背景非阻塞地向 Telegram 註冊 Webhook，避免拖慢啟動流程。"""
+    import asyncio
+    # 等待伺服器完全啟動後再嘗試，避免容器網路尚未就緒
+    await asyncio.sleep(5)
+    print(f"====== 正在設定 Telegram Webhook: {webhook_url} ======")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
+        for attempt in range(1, 6):  # 最多重試 5 次
+            try:
+                res = await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/setWebhook",
+                    json={"url": webhook_url}
+                )
+                print("Webhook 註冊結果:", res.text)
+                return
+            except httpx.ConnectTimeout as e:
+                wait = 10 * attempt  # 10s, 20s, 30s, 40s
+                print(f"Webhook 註冊逾時 (第 {attempt}/5 次): {repr(e)}，{wait}s 後重試")
+                await asyncio.sleep(wait)
+            except Exception as e:
+                print(f"Webhook 註冊失敗: {repr(e)}")
+                import traceback
+                traceback.print_exc()
+                return
+    print("Webhook 註冊失敗：已達最大重試次數，請手動呼叫 /setup-webhook")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 伺服器啟動時，自動向 Telegram 註冊 Webhook
+    import asyncio
+    # 伺服器啟動時，在背景非阻塞地向 Telegram 註冊 Webhook
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    space_host = os.getenv("SPACE_HOST") # Hugging Face Spaces 內建環境變數
-    
+    space_host = os.getenv("SPACE_HOST")  # Hugging Face Spaces 內建環境變數
+
     # 如果使用者有自行設定 WEBHOOK_URL 優先使用，否則使用 HF Space 預設網址
     webhook_url = os.getenv("WEBHOOK_URL")
     if not webhook_url and space_host:
         webhook_url = f"https://{space_host}/webhook/telegram"
-        
+
     if bot_token and webhook_url:
-        print(f"====== 正在設定 Telegram Webhook: {webhook_url} ======")
-        import asyncio
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
-            for attempt in range(1, 4):  # 最多重試 3 次
-                try:
-                    res = await client.post(
-                        f"https://api.telegram.org/bot{bot_token}/setWebhook",
-                        json={"url": webhook_url}
-                    )
-                    print("Webhook 註冊結果:", res.text)
-                    break
-                except httpx.ConnectTimeout as e:
-                    print(f"Webhook 註冊逾時 (第 {attempt}/3 次): {repr(e)}")
-                    if attempt < 3:
-                        await asyncio.sleep(5 * attempt)  # 5s, 10s
-                except Exception as e:
-                    print(f"Webhook 註冊失敗: {repr(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    break
-                
+        asyncio.create_task(_register_webhook_bg(bot_token, webhook_url))
+
     yield
     # 伺服器關閉時的清理動作 (Optional)
 
@@ -65,6 +74,21 @@ def verify_cron_secret(x_cron_secret: str = Header(None)):
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "KnowFetch 系統運作中！"}
+
+@app.post("/setup-webhook", dependencies=[Depends(verify_cron_secret)])
+async def setup_webhook():
+    """手動觸發 Telegram Webhook 註冊，供背景任務失敗時補救。"""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    space_host = os.getenv("SPACE_HOST")
+    webhook_url = os.getenv("WEBHOOK_URL") or (f"https://{space_host}/webhook/telegram" if space_host else None)
+    if not bot_token or not webhook_url:
+        raise HTTPException(status_code=400, detail="缺少 TELEGRAM_BOT_TOKEN 或 Webhook URL 設定")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
+        res = await client.post(
+            f"https://api.telegram.org/bot{bot_token}/setWebhook",
+            json={"url": webhook_url}
+        )
+    return {"webhook_url": webhook_url, "telegram_response": res.json()}
 
 @app.post("/trigger-pipeline", status_code=200, dependencies=[Depends(verify_cron_secret)])
 async def trigger_pipeline():

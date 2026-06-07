@@ -60,14 +60,15 @@ graph TD
 - **Deployment**: `Docker`, Hugging Face Spaces (Serverless HTTP Trigger)
 
 ---
-
 ### 🛡️ 系統穩定性優化 (Reliability Features)
 
 針對 Hugging Face Spaces 等特定雲端環境的限制，本系統實作了以下優化：
+- **背景非阻塞 Webhook 註冊**：將 Telegram Webhook 註冊改為非阻塞背景任務，避免因 Telegram API 連線波動導致伺服器啟動逾時（Startup Timeout）。
+- **後台手動修復 Endpoint**：新增 `/setup-webhook` API，當自動註冊失敗時，可透過安全性驗證進行手動補救與狀態檢查。
 - **全域 IPv4 強制連線**：解決 HF Spaces 上 IPv6 路由至 Telegram API 不通導致的隨機 `ConnectTimeout`。
 - **程序級非阻塞鎖 (Async Lock)**：防止外部 Cron 在短時間內重複觸發導致的並發任務執行與推播重疊。
-- **優化 Timeout 與 Backoff**：實作更精簡的連線超時與線性重試機制，確保系統在資源受限環境下仍能快速恢復，不阻塞後續排程。
-- **爬蟲智慧降速策略**：透過計算當日 YouTube 影片數量並自動計算延遲間隔（加入隨機抖動），將爬蟲生命週期延展至 2 小時，有效避免遭到目標網站封鎖與 API 速率限制。
+- **優化 Timeout 與 Backoff**：實作更精簡的連線超時與多重指數/線性重試機制，確保系統在資源受限環境下仍能快速恢復。
+- **爬蟲智慧降速策略**：透過計算當日更新量並自動計算延遲間隔（加入隨機抖動），將爬蟲生命週期合理化延展，避免遭封鎖。
 - **錯峰排程與喚醒機制**：透過 GitHub Actions Cron 以 HTTP POST 方式喚醒機制，降低系統資源處於休眠被凍結的問題。每天清晨 6 點開始收集文章。
 
 ---
