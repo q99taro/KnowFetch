@@ -9,15 +9,11 @@ from datetime import datetime, timedelta, timezone
 import re
 
 from urllib.parse import urlparse, parse_qs
-import urllib.request
-from youtube_transcript_api import YouTubeTranscriptApi
 
 class ArticleScraper:
     FEEDS = {
         "kdnuggets": "https://www.kdnuggets.com/feed",
-        "towardsdatascience": "https://towardsdatascience.com/feed/",
-        "youtube_hungyi": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2ggjtuuWvxrHHHiaDH1dlQ",
-        "youtube_vivian": "https://www.youtube.com/feeds/videos.xml?channel_id=UCyB2RBqKbxDPGCs1PokeUiA"
+        "towardsdatascience": "https://towardsdatascience.com/feed/"
     }
 
     async def fetch_latest_articles(self) -> List[Dict[str, str]]:
@@ -36,52 +32,6 @@ class ArticleScraper:
             for source_name, url in self.FEEDS.items():
                 print(f"正在擷取: {source_name}")
                 try:
-                    if 'youtube.com' in url:
-                        # YouTube 容易遇到 TLS 握手被阻擋 (UNEXPECTED_EOF_WHILE_READING)，改使用 YouTube API v3
-                        api_key = os.getenv("YOUTUBE_API_KEY")
-                        if not api_key:
-                            print(f"警告: 尚未設定 YOUTUBE_API_KEY，跳過 YouTube ({source_name})")
-                            continue
-                        
-                        parsed = urlparse(url)
-                        qs = parse_qs(parsed.query)
-                        channel_id = qs.get('channel_id', [None])[0]
-                        if not channel_id or not channel_id.startswith('UC'):
-                            continue
-                            
-                        # 將 Channel ID (UC...) 轉成 Uploads Playlist ID (UU...)，每次 Query 只需 1 Quota
-                        playlist_id = 'UU' + channel_id[2:]
-                        api_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={playlist_id}&maxResults=10&key={api_key}"
-                        
-                        yt_resp = await client.get(api_url)
-                        yt_resp.raise_for_status()
-                        yt_data = yt_resp.json()
-                        
-                        for item in yt_data.get('items', []):
-                            snippet = item.get('snippet', {})
-                            title = snippet.get('title', '')
-                            video_id = snippet.get('resourceId', {}).get('videoId', '')
-                            link = f"https://www.youtube.com/watch?v={video_id}"
-                            abstract = snippet.get('description', '')[:500]
-                            pub_date_str = snippet.get('publishedAt', '')
-                            
-                            try:
-                                pub_date = datetime.fromisoformat(pub_date_str.replace('Z', '+00:00'))
-                            except ValueError as e:
-                                print(f"無法解析時間 {pub_date_str}: {e}")
-                                pub_date = now_utc
-                            
-                            all_articles.append({
-                                "source": source_name,
-                                "title": title,
-                                "url": link,
-                                "abstract": abstract.strip(),
-                                "pub_date": pub_date.isoformat(),
-                                "is_recent": pub_date >= one_day_ago
-                            })
-                        continue  # 處理完 YouTube 後進入下一個 loop
-
-                    # 處理非 YouTube 的一般 RSS
                     response = await client.get(url)
                     response.raise_for_status()
                     root = ET.fromstring(response.text)
@@ -165,58 +115,8 @@ class ArticleScraper:
     async def fetch_article_content(self, url: str, source: str) -> str:
         """
         依據網址來源抓取文章，並遵守該網站的禮貌限制 (例如 TDS 停留 10 秒)。
-        將 HTML 轉為純文字，保留 Markdown 程式碼區塊以便分塊。
+        將 HTML 轉為純文字，保留 Markdown 程式碼區塊。
         """
-        if source.startswith("youtube"):
-            print(f"正在抓取 YouTube 字幕: {url}")
-            # parse video ID
-            parsed_url = urlparse(url)
-            video_id = ""
-            if parsed_url.hostname in ('youtu.be', 'www.youtu.be'):
-                video_id = parsed_url.path[1:]
-            elif parsed_url.hostname in ('youtube.com', 'www.youtube.com'):
-                if parsed_url.path == '/watch':
-                    qs = parse_qs(parsed_url.query)
-                    video_id = qs.get('v', [''])[0]
-                    
-            if not video_id:
-                print(f"無法解析 YouTube Video ID: {url}")
-                return ""
-            
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    # 嘗試抓取繁中、簡中、或英文的字幕
-                    # 舊版 YouTubeTranscriptApi (例如 v0.x)
-                    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
-                        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        if transcript and isinstance(transcript[0], dict):
-                            full_text = " ".join([entry['text'] for entry in transcript])
-                        else:
-                            full_text = " ".join([str(t) for t in transcript])
-                    # 新版 YouTubeTranscriptApi (例如 v1.x+)
-                    elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
-                        # 有的過渡版本使用 list_transcripts
-                        tl = YouTubeTranscriptApi.list_transcripts(video_id)
-                        t = tl.find_transcript(['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        transcript = t.fetch()
-                        full_text = " ".join([entry['text'] for entry in transcript])
-                    else:
-                        transcript = YouTubeTranscriptApi().fetch(video_id, languages=['zh-TW', 'zh-Hant', 'zh-Hans', 'zh', 'en'])
-                        # FetchedTranscriptSNippet object has .text
-                        full_text = " ".join([snippet.text for snippet in transcript])
-                    
-                    return self._clean_text(full_text)
-                except Exception as e:
-                    import traceback
-                    if attempt < max_retries - 1:
-                        print(f"嘗試抓取 YouTube 字幕失敗 {video_id} (第 {attempt+1} 次)，等待後重試: {e}")
-                        await asyncio.sleep(2 ** attempt)
-                    else:
-                        print(f"無法抓取 YouTube 字幕 {video_id}: {e}")
-                        print(traceback.format_exc())
-                        return ""
-
         # --- 禮貌性延遲 ---
         if source == "towardsdatascience":
             print(f"進入 Towards Data Science 前，強制等待 10 秒: {url}")
@@ -269,25 +169,3 @@ class ArticleScraper:
         # 清理多餘的空白與換行，確保最多雙換行
         text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
-
-if __name__ == "__main__":
-    async def test_scraper():
-        scraper = ArticleScraper()
-        
-        print("正在抓取 RSS...")
-        articles = await scraper.fetch_latest_articles()
-        
-        print(f"共找到 {len(articles)} 篇 24 小時內的文章。")
-        for i, art in enumerate(articles[:5]):
-            print(f"{i+1}. [{art['source']}] {art['title']}")
-            
-        if articles:
-            target_url = articles[0]['url']
-            target_source = articles[0]['source']
-            print("\n嘗試擷取第一篇文章內容...\n")
-            
-            content = await scraper.fetch_article_content(target_url, target_source)
-            print("--- 文章預覽 (前 500 字) ---")
-            print(content[:500] + "...")
-
-    asyncio.run(test_scraper())

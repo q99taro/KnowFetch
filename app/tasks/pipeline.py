@@ -73,23 +73,16 @@ class KnowledgePipeline:
         # ---------------------------------------------------------
         # 步驟 3：LLM 批次判斷與篩選 (Batch Filtering)
         # ---------------------------------------------------------
-        print("[Step 3] 進行文章價值評估 (YouTube 影片直接保留，其餘交由 Gemini 篩選)...")
-        
-        yt_articles = [art for art in new_articles if art['source'].startswith('youtube_')]
-        other_articles = [art for art in new_articles if not art['source'].startswith('youtube_')]
+        print("[Step 3] 進行文章價值評估 (交由 Gemini 篩選)...")
         
         filtered_articles = []
-        if yt_articles:
-            print(f"-> 直接保留 {len(yt_articles)} 篇 YouTube 影片 (跳過 LLM 評估)。")
-            filtered_articles.extend(yt_articles)
-            
-        if other_articles:
-            print(f"-> 將 {len(other_articles)} 篇文章交由 Gemini 進行篩選...")
-            llm_filtered = self.llm_extractor.batch_filter_articles(other_articles)
+        if new_articles:
+            print(f"-> 將 {len(new_articles)} 篇文章交由 Gemini 進行篩選...")
+            llm_filtered = self.llm_extractor.batch_filter_articles(new_articles)
             
             # 錄入被 LLM 篩選掉的文章至 ignored_urls，避免下次流水線重複處理
             filtered_urls_set = {art['url'] for art in llm_filtered}
-            rejected_urls = [art['url'] for art in other_articles if art['url'] not in filtered_urls_set]
+            rejected_urls = [art['url'] for art in new_articles if art['url'] not in filtered_urls_set]
             if rejected_urls:
                 print(f"   -> 有 {len(rejected_urls)} 篇文章被 LLM 判定為不符合條件，將其加入略過清單。")
                 try:
@@ -108,15 +101,6 @@ class KnowledgePipeline:
         # ---------------------------------------------------------
         # 步驟 4 ~ 6：逐篇抓取、摘要與寄送 Email
         # ---------------------------------------------------------
-        import random
-        yt_articles_count = sum(1 for a in filtered_articles if a['source'].startswith('youtube'))
-        if yt_articles_count > 0:
-            target_time_seconds = 7200
-            delay_per_yt = target_time_seconds // yt_articles_count
-            yt_base_delay = max(60, min(delay_per_yt, 300))
-        else:
-            yt_base_delay = 60
-
         for i, article in enumerate(filtered_articles):
             print(f"\n[{i+1}/{len(filtered_articles)}] 開始處理: {article['title']}")
             
@@ -163,13 +147,8 @@ class KnowledgePipeline:
 
             # 爬取下一篇文章前，稍微等待確保不會觸發 Rate Limit
             if i < len(filtered_articles) - 1:
-                if article['source'].startswith('youtube'):
-                    jitter = random.uniform(0.8, 1.2)
-                    sleep_time = int(yt_base_delay * jitter)
-                    print(f"-> 🍵 避免 YouTube 爬取頻繁，等待 {sleep_time} 秒...\n")
-                else:
-                    sleep_time = self.gemini_rate_limit_delay
-                    print(f"-> 冷卻 {sleep_time} 秒...\n")
+                sleep_time = self.gemini_rate_limit_delay
+                print(f"-> 冷卻 {sleep_time} 秒...\n")
                 
                 await asyncio.sleep(sleep_time)
 

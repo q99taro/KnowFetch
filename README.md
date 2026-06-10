@@ -18,7 +18,7 @@ pinned: false
 ### 📊 核心特色與技術流程 (Key Features & Workflow)
 
 1. **資料收集 (Data Ingestion)**
-   - 定時巡邏指定的技術網站 RSS (如 KDnuggets, Towards Data Science) 與 YouTube 頻道。
+   - 定時巡邏指定的技術網站 RSS (如 KDnuggets, Towards Data Science)。
    - 結合 Supabase 實作去重機制 (Deduplication)，確保來源不重複處理。
 2. **AI 清洗與內容萃取 (Data Processing & LLM Summarization)**
    - 利用 Gemini 進行大文本的意圖辨識與過濾，精準剃除不相關的雜訊或純名詞解釋的無用文章。
@@ -32,7 +32,7 @@ pinned: false
 
 ```mermaid
 graph TD
-    A[Data Ingestion: RSS/YouTube] --> B(Supabase: Ignore List Deduplication)
+    A[Data Ingestion: RSS] --> B(Supabase: Ignore List Deduplication)
     B --> C{Async Batch & LLM Filter}
     C --> D{Gemini Markdown Summarization}
     D --> E[Email Sender: SMTP]
@@ -43,7 +43,7 @@ graph TD
 - **Backend Core**: Python 3.10+, `FastAPI`, `asyncio`, `httpx`, `Pydantic`
 - **Data & AI**: Google GenAI SDK (`Gemini 3.1 Flash-Lite`), `BeautifulSoup4`
 - **Database**: Supabase (`PostgreSQL`, `SQLAlchemy` - 用於已讀名單去重)
-- **Integration & APIs**: YouTube Data API v3, `smtplib` (Email 傳送)
+- **Integration & APIs**:  `smtplib` (Email 傳送)
 - **Deployment**: `Docker`, Hugging Face Spaces (Serverless HTTP Trigger)
 
 ---
@@ -74,9 +74,6 @@ GEMINI_API_KEY=your_gemini_api_key
 # Supabase (用於儲存看過的文章清單)
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
-
-# YouTube API
-YOUTUBE_API_KEY=your_youtube_v3_api_key
 
 # API Cron 安全金鑰
 CRON_SECRET=your_cron_secret
