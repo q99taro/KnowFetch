@@ -27,11 +27,13 @@ def verify_cron_secret(x_cron_secret: str = Header(None)):
 def read_root():
     return {"status": "ok", "message": "KnowFetch 系統運作中！"}
 
+import asyncio
+
 @app.post("/trigger-pipeline", status_code=200, dependencies=[Depends(verify_cron_secret)])
-async def trigger_pipeline(background_tasks: BackgroundTasks):
+async def trigger_pipeline():
     """
     透過 HTTP 觸發每日收集與知識彙整發送信件的管線 (背景執行)。
     """
     pipeline = KnowledgePipeline()
-    background_tasks.add_task(pipeline.run_daily_pipeline)
+    asyncio.create_task(pipeline.run_daily_pipeline())
     return {"message": "Knowledge Pipeline Started in background"}

@@ -1,5 +1,6 @@
 import os
 import resend
+import markdown
 
 class EmailSender:
     def __init__(self):
@@ -17,7 +18,10 @@ class EmailSender:
 
         subject = f"[KnowFetch] 新文章重點：{title}"
 
-        # 簡單地將 Markdown 包裝進 HTML 中，為了更好的閱讀體驗
+        # 將 Markdown 轉換為 HTML
+        html_summary = markdown.markdown(markdown_summary, extensions=["extra"])
+        
+        # 簡單地將轉換後的 HTML 包裝起來，為了更好的閱讀體驗
         html_content = f"""
         <html>
         <head>
@@ -32,8 +36,8 @@ class EmailSender:
         <body>
             <h3>文章標題：<a href="{article_url}">{title}</a></h3>
             <hr/>
-            <!-- 使用 pre-wrap 保留 Markdown 換行 -->
-            <div style="white-space: pre-wrap;">{markdown_summary}</div>
+            <!-- 轉換後的 HTML -->
+            <div>{html_summary}</div>
             <div class="footer">
                 <p>這封郵件由 KnowFetch 自動寄送 (via Resend API)。</p>
             </div>
