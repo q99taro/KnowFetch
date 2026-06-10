@@ -2,14 +2,12 @@ name: KnowFetch Daily Schedule
 
 on:
   schedule:
+    # 每天早上 6 點 (UTC 22:00) 觸發文章收集與寄信
     - cron: "0 22 * * *"
-    - cron: "0 0,4,9,13 * * 1-5"
-    - cron: "0 1,13 * * 0,6"
   workflow_dispatch:
 
 jobs:
   trigger_pipeline:
-    if: github.event.schedule == '0 22 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Wake up HF Space & Send POST request
@@ -26,21 +24,3 @@ jobs:
                -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
                -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
                --retry 3 --retry-delay 30 --max-time 900
-
-  trigger_review:
-    if: github.event.schedule == '0 0,4,9,13 * * 1-5' || github.event.schedule == '0 1,13 * * 0,6' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wake up HF Space & Send POST request
-        run: |
-          # 1. 僅存取首頁以喚醒 Space
-          curl -s "${{ secrets.HF_SPACE_URL }}/" > /dev/null || true
-
-          sleep 60
-
-          # 2. 觸發 Review，並將逾時時間延長至 300 秒 (5 分鐘)
-          curl -f -X POST "${{ secrets.HF_SPACE_URL }}/trigger-review" \
-               -H "Content-Type: application/json" \
-               -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
-               -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-               --retry 3 --retry-delay 30 --max-time 300
