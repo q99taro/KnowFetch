@@ -122,6 +122,7 @@ class KnowledgePipeline:
                 # 就算失敗或是無知識點也視為處理過
                 if "無法生成摘要" in markdown_summary or "本篇文章無進階實作知識點" in markdown_summary:
                     print("  -> 該文章未提取出有意義之重點或發生錯誤，將直接略過寄件。")
+                    print(f"  -> [詳細原因]: {markdown_summary.strip()}")
                 else:
                     # Step 6: 將摘要寄送至 Email
                     print("  -> 正在將重點以 Email 寄出...")
